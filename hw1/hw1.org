@@ -1,0 +1,10 @@
+
+* General
+
+- [X] fix matplotlib
+- [X] Run all experiments + modify batch script
+- [ ] focus app
+- [ ] Hide snippets to background in action
+- [ ] Push all to git
+- [ ] Push made as well
+- [ ] Try dash for snippets and find workflow
