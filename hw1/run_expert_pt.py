@@ -18,8 +18,8 @@ import numpy as np
 import torch
 import gym
 import load_policy_pytorch
-from train_behavior_clone import BehaviorClone
 import argparse
+from utils import BehaviorClone
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -75,8 +75,8 @@ def run_sim(env, nn, policy_fn, max_steps, num_rollouts, render):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--expert-policy-file', type=str, default="experts/Humanoid-v2.pkl")
-    parser.add_argument('--envname', type=str, default="Humanoid-v2")
+    parser.add_argument('--expert-policy-file', type=str)
+    parser.add_argument('--envname', type=str)
     parser.add_argument('--render', action='store_true', default=True)
     parser.add_argument("--max_timesteps", type=int, default=100)
     parser.add_argument('--num_rollouts', type=int, default=5,
@@ -92,7 +92,6 @@ def main():
     env = gym.make(args.envname)
     max_steps = args.max_timesteps or env.spec.timestep_limit
 
-    # Hack
     # Get environment datasizes
     with open(os.path.join('expert_data', args.envname + '.pkl'), 'rb') as f:
         expert_data = pickle.load(f)
@@ -103,7 +102,7 @@ def main():
     bclone_model = BehaviorClone(input_size, output_size)
 
     # Read pre-trained weights from disk
-    checkpoint=torch.load('models/BC_' + args.envname + '.pt', map_location='cpu')
+    checkpoint = torch.load('models/DAG_' + args.envname + '.pt', map_location='cpu')
     bclone_model.load_state_dict(checkpoint['state_dict'])
 
     # Set to eval
@@ -113,16 +112,13 @@ def main():
     base_returns = run_sim(env, False, base_policy_fn, max_steps, args.num_rollouts, args.render)
     bclone_returns = run_sim(env, True, bclone_model, max_steps, args.num_rollouts, args.render)
 
-
-    # FIX THIS
-    
     # plot here
     fig = plt.figure()
     plt.plot(base_returns, 'b', label="Base")
-    plt.plot(bclone_returns, 'r', label="Behavior clone")
+    plt.plot(bclone_returns, 'r', label="DAG Behavior clone")
     plt.grid(True)
     plt.legend(loc='upper right')
-    plt.savefig('output/' + args.envname + '_behavior_clone_rewards.png')
+    plt.savefig('output/' + args.envname + '_dag_rewards.png')
     plt.close(fig)
 
 
