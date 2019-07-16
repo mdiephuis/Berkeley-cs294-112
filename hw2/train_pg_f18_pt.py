@@ -5,12 +5,16 @@ Adapted for CS294-112 Fall 2018 by Michael Chang and Soroush Nasiriany
 """
 import numpy as np
 import tensorflow as tf
+import torch.nn as nn
+import torch.functional as F
+import torch
 import gym
 import logz
 import os
 import time
 import inspect
 from multiprocessing import Process
+from utils import *
 
 #============================================================================================#
 # Utilities
@@ -19,6 +23,39 @@ from multiprocessing import Process
 #========================================================================================#
 #                           ----------PROBLEM 2----------
 #========================================================================================#
+
+
+class MLP(nn.Module):
+    def __init__(self, input_size, output_size, n_layers, size, is_discrete):
+        super(MLP, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.n_layers = n_layers
+        self.size = size
+        self.is_discrete = is_discrete
+
+        self.logstd = nn.Parameter(torch.Tensor(self.size, 1).normal_(0.0, 1.0))
+
+        self.fc_input = nn.Linear(self.input_size, self.size)
+        self.middle_layers = []
+
+        for _ in range(n_layers):
+            self.middle_layers.append(nn.Linear(self.size, self.size))
+        self.m_layers = nn.ModuleList(self.middle_layers)
+
+        self.out_layer = nn.Linear(self.size, self.output_size)
+
+    def forward(self, x):
+        x = F.tanh(self.fc_input(x))
+        for layer in self.m_layers:
+            x = F.tanh(layer(x))
+
+        x = self.out_layer(x)
+        if self.discrete:
+            x = F.softmax(x)
+            return x
+        else:
+            return x, self.logstd
 
 
 def build_mlp(input_placeholder, output_size, scope, n_layers, size, activation=tf.tanh, output_activation=None):
@@ -35,13 +72,10 @@ def build_mlp(input_placeholder, output_size, scope, n_layers, size, activation=
             output_activation: activation of the ouput layers
 
         returns:
-            output placeholder of the network (the result of a forward pass) 
--
-        Hint: use tf.layers.dense    
+            output placeholder of the network (the result of a forward pass)
     """
-    # YOUR CODE HERE
-    raise NotImplementedError
-    return output_placeholder
+
+    return model
 
 
 def pathlength(path):
@@ -79,6 +113,13 @@ class Agent(object):
         self.reward_to_go = estimate_return_args['reward_to_go']
         self.nn_baseline = estimate_return_args['nn_baseline']
         self.normalize_advantages = estimate_return_args['normalize_advantages']
+        self.model = MLP(self.ob_dim, self.ac_dim, self.n_layers, self.size, self.discrete)
+        model.apply(init_weights)
+
+        self.lr = 1e-3
+        self.beta1 = 0.9
+        self.beta2 = 0.999
+        self.opt = torch.optim.Adam(self.model.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
 
     def init_tf_sess(self):
         tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
@@ -141,12 +182,11 @@ class Agent(object):
         raise NotImplementedError
         if self.discrete:
             # YOUR_CODE_HERE
-            sy_logits_na = None
+            sy_logits_na = self.model(sy_ob_no)
             return sy_logits_na
         else:
             # YOUR_CODE_HERE
-            sy_mean = None
-            sy_logstd = None
+            sy_mean, sy_logstd = self.model(sy_ob_no)
             return (sy_mean, sy_logstd)
 
     #========================================================================================#
@@ -158,14 +198,14 @@ class Agent(object):
 
             arguments:
                 policy_parameters
-                    if discrete: logits of a categorical distribution over actions 
+                    if discrete: logits of a categorical distribution over actions
                         sy_logits_na: (batch_size, self.ac_dim)
                     if continuous: (mean, log_std) of a Gaussian distribution over actions
                         sy_mean: (batch_size, self.ac_dim)
                         sy_logstd: (self.ac_dim,)
 
             returns:
-                sy_sampled_ac: 
+                sy_sampled_ac:
                     if discrete: (batch_size,)
                     if continuous: (batch_size, self.ac_dim)
 
@@ -179,12 +219,14 @@ class Agent(object):
         raise NotImplementedError
         if self.discrete:
             sy_logits_na = policy_parameters
-            # YOUR_CODE_HERE
-            sy_sampled_ac = None
+            dist = torch.categorical.Categorical(logits=sy_logits_na)
+            sy_sampled_ac = dist.sample(sy_logits_na.size(0))
         else:
             sy_mean, sy_logstd = policy_parameters
-            # YOUR_CODE_HERE
-            sy_sampled_ac = None
+            # Reparam
+            dist = torch.distributions.Normal(sy_mean, sy_logstd)
+            sy_sampled_ac = dist.sample(sy_mean.size(0))
+
         return sy_sampled_ac
 
     #========================================================================================#
@@ -196,13 +238,13 @@ class Agent(object):
 
             arguments:
                 policy_parameters
-                    if discrete: logits of a categorical distribution over actions 
+                    if discrete: logits of a categorical distribution over actions
                         sy_logits_na: (batch_size, self.ac_dim)
                     if continuous: (mean, log_std) of a Gaussian distribution over actions
                         sy_mean: (batch_size, self.ac_dim)
                         sy_logstd: (self.ac_dim,)
 
-                sy_ac_na: 
+                sy_ac_na:
                     if discrete: (batch_size,)
                     if continuous: (batch_size, self.ac_dim)
 
@@ -216,13 +258,18 @@ class Agent(object):
         raise NotImplementedError
         if self.discrete:
             sy_logits_na = policy_parameters
-            # YOUR_CODE_HERE
-            sy_logprob_n = None
+            dist = torch.categorical.Categorical(logits=sy_logits_na)
+            sy_logprob_n = dist.logprob(sy_ac_na)
         else:
             sy_mean, sy_logstd = policy_parameters
-            # YOUR_CODE_HERE
-            sy_logprob_n = None
+            # Reparam
+            dist = torch.distributions.Normal(sy_mean, sy_logstd)
+            sy_logprob_n = dist.logprob(sy_ac_na)
         return sy_logprob_n
+
+    def policy_loss(sy_logprob_n, reward):
+        reward = torch.tensor(reward).type(torch.FloatTensor)
+        return torch.mean(sy_logprob_n * reward)
 
     def build_computation_graph(self):
         """
@@ -310,10 +357,11 @@ class Agent(object):
             #====================================================================================#
             #                           ----------PROBLEM 3----------
             #====================================================================================#
-            raise NotImplementedError
-            ac = None  # YOUR CODE HERE
-            ac = ac[0]
+            policy_parameters = self.model(ob)
+            ac = self.sample_action(policy_parameters)
+            ac = ac.detach().numpy()
             acs.append(ac)
+
             ob, rew, done, _ = env.step(ac)
             rewards.append(rew)
             steps += 1
@@ -470,21 +518,24 @@ class Agent(object):
 
     def update_parameters(self, ob_no, ac_na, q_n, adv_n):
         """ 
-            Update the parameters of the policy and (possibly) the neural network baseline, 
+            Update the parameters of the policy and (possibly) the neural network baseline,
             which is trained to approximate the value function.
 
             arguments:
                 ob_no: shape: (sum_of_path_lengths, ob_dim)
                 ac_na: shape: (sum_of_path_lengths).
-                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values 
+                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values
                     whose length is the sum of the lengths of the paths
-                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated 
+                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated
                     advantages whose length is the sum of the lengths of the paths
 
             returns:
                 nothing
 
         """
+
+
+
         #====================================================================================#
         #                           ----------PROBLEM 6----------
         # Optimizing Neural Network Baseline
