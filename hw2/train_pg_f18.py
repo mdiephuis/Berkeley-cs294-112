@@ -16,6 +16,8 @@ from multiprocessing import Process
 # Utilities
 #============================================================================================#
 
+
+
 #========================================================================================#
 #                           ----------PROBLEM 2----------
 #========================================================================================#
@@ -35,9 +37,9 @@ def build_mlp(input_placeholder, output_size, scope, n_layers, size, activation=
             output_activation: activation of the ouput layers
 
         returns:
-            output placeholder of the network (the result of a forward pass) 
+            output placeholder of the network (the result of a forward pass)
 -
-        Hint: use tf.layers.dense    
+        Hint: use tf.layers.dense
     """
     # YOUR CODE HERE
     raise NotImplementedError
@@ -91,7 +93,7 @@ class Agent(object):
     #========================================================================================#
     def define_placeholders(self):
         """
-            Placeholders for batch batch observations / actions / advantages in policy gradient 
+            Placeholders for batch batch observations / actions / advantages in policy gradient
             loss function.
             See Agent.build_computation_graph for notation
 
@@ -158,14 +160,14 @@ class Agent(object):
 
             arguments:
                 policy_parameters
-                    if discrete: logits of a categorical distribution over actions 
+                    if discrete: logits of a categorical distribution over actions
                         sy_logits_na: (batch_size, self.ac_dim)
                     if continuous: (mean, log_std) of a Gaussian distribution over actions
                         sy_mean: (batch_size, self.ac_dim)
                         sy_logstd: (self.ac_dim,)
 
             returns:
-                sy_sampled_ac: 
+                sy_sampled_ac:
                     if discrete: (batch_size,)
                     if continuous: (batch_size, self.ac_dim)
 
@@ -196,13 +198,13 @@ class Agent(object):
 
             arguments:
                 policy_parameters
-                    if discrete: logits of a categorical distribution over actions 
+                    if discrete: logits of a categorical distribution over actions
                         sy_logits_na: (batch_size, self.ac_dim)
                     if continuous: (mean, log_std) of a Gaussian distribution over actions
                         sy_mean: (batch_size, self.ac_dim)
                         sy_logstd: (self.ac_dim,)
 
-                sy_ac_na: 
+                sy_ac_na:
                     if discrete: (batch_size,)
                     if continuous: (batch_size, self.ac_dim)
 
@@ -232,7 +234,7 @@ class Agent(object):
             that are computed later in the function
 
             Prefixes and suffixes:
-            ob - observation 
+            ob - observation
             ac - action
             _no - this tensor should have shape (batch self.size /n/, observation dim)
             _na - this tensor should have shape (batch self.size /n/, action dim)
@@ -267,6 +269,7 @@ class Agent(object):
 
         #========================================================================================#
         #                           ----------PROBLEM 6----------
+        #                           TODO
         # Optional Baseline
         #
         # Define placeholders for targets, a loss function and an update op for fitting a
@@ -283,7 +286,7 @@ class Agent(object):
             # YOUR_CODE_HERE
             self.sy_target_n = None
             baseline_loss = None
-            self.baseline_update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(baseline_loss)
+            # self.baseline_update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(baseline_loss)
 
     def sample_trajectories(self, itr, env):
         # Collect paths until we have enough timesteps
@@ -331,42 +334,42 @@ class Agent(object):
         """
             Monte Carlo estimation of the Q function.
 
-            let sum_of_path_lengths be the sum of the lengths of the paths sampled from 
+            let sum_of_path_lengths be the sum of the lengths of the paths sampled from
                 Agent.sample_trajectories
             let num_paths be the number of paths sampled from Agent.sample_trajectories
 
             arguments:
-                re_n: length: num_paths. Each element in re_n is a numpy array 
+                re_n: length: num_paths. Each element in re_n is a numpy array
                     containing the rewards for the particular path
 
             returns:
-                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values 
+                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values
                     whose length is the sum of the lengths of the paths
 
             ----------------------------------------------------------------------------------
 
             Your code should construct numpy arrays for Q-values which will be used to compute
-            advantages (which will in turn be fed to the placeholder you defined in 
-            Agent.define_placeholders). 
+            advantages (which will in turn be fed to the placeholder you defined in
+            Agent.define_placeholders).
 
             Recall that the expression for the policy gradient PG is
 
                   PG = E_{tau} [sum_{t=0}^T grad log pi(a_t|s_t) * (Q_t - b_t )]
 
-            where 
+            where
 
                   tau=(s_0, a_0, ...) is a trajectory,
                   Q_t is the Q-value at time t, Q^{pi}(s_t, a_t),
-                  and b_t is a baseline which may depend on s_t. 
+                  and b_t is a baseline which may depend on s_t.
 
             You will write code for two cases, controlled by the flag 'reward_to_go':
 
-              Case 1: trajectory-based PG 
+              Case 1: trajectory-based PG
 
                   (reward_to_go = False)
 
-                  Instead of Q^{pi}(s_t, a_t), we use the total discounted reward summed over 
-                  entire trajectory (regardless of which time step the Q-value should be for). 
+                  Instead of Q^{pi}(s_t, a_t), we use the total discounted reward summed over
+                  entire trajectory (regardless of which time step the Q-value should be for).
 
                   For this case, the policy gradient estimator is
 
@@ -380,7 +383,7 @@ class Agent(object):
 
                       Q_t = Ret(tau)
 
-              Case 2: reward-to-go PG 
+              Case 2: reward-to-go PG
 
                   (reward_to_go = True)
 
@@ -391,7 +394,7 @@ class Agent(object):
 
 
             Store the Q-values for all timesteps and all trajectories in a variable 'q_n',
-            like the 'ob_no' and 'ac_na' above. 
+            like the 'ob_no' and 'ac_na' above.
         """
         # YOUR_CODE_HERE
         if self.reward_to_go:
@@ -404,17 +407,17 @@ class Agent(object):
         """
             Computes advantages by (possibly) subtracting a baseline from the estimated Q values
 
-            let sum_of_path_lengths be the sum of the lengths of the paths sampled from 
+            let sum_of_path_lengths be the sum of the lengths of the paths sampled from
                 Agent.sample_trajectories
             let num_paths be the number of paths sampled from Agent.sample_trajectories
 
             arguments:
                 ob_no: shape: (sum_of_path_lengths, ob_dim)
-                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values 
+                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values
                     whose length is the sum of the lengths of the paths
 
             returns:
-                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated 
+                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated
                     advantages whose length is the sum of the lengths of the paths
         """
         #====================================================================================#
@@ -440,19 +443,19 @@ class Agent(object):
         """
             Estimates the returns over a set of trajectories.
 
-            let sum_of_path_lengths be the sum of the lengths of the paths sampled from 
+            let sum_of_path_lengths be the sum of the lengths of the paths sampled from
                 Agent.sample_trajectories
             let num_paths be the number of paths sampled from Agent.sample_trajectories
 
             arguments:
                 ob_no: shape: (sum_of_path_lengths, ob_dim)
-                re_n: length: num_paths. Each element in re_n is a numpy array 
+                re_n: length: num_paths. Each element in re_n is a numpy array
                     containing the rewards for the particular path
 
             returns:
-                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values 
+                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values
                     whose length is the sum of the lengths of the paths
-                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated 
+                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated
                     advantages whose length is the sum of the lengths of the paths
         """
         q_n = self.sum_of_rewards(re_n)
@@ -465,20 +468,19 @@ class Agent(object):
             # On the next line, implement a trick which is known empirically to reduce variance
             # in policy gradient methods: normalize adv_n to have mean zero and std=1.
             raise NotImplementedError
-            adv_n = None  # YOUR_CODE_HERE
         return q_n, adv_n
 
     def update_parameters(self, ob_no, ac_na, q_n, adv_n):
-        """ 
-            Update the parameters of the policy and (possibly) the neural network baseline, 
+        """
+            Update the parameters of the policy and (possibly) the neural network baseline,
             which is trained to approximate the value function.
 
             arguments:
                 ob_no: shape: (sum_of_path_lengths, ob_dim)
                 ac_na: shape: (sum_of_path_lengths).
-                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values 
+                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values
                     whose length is the sum of the lengths of the paths
-                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated 
+                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated
                     advantages whose length is the sum of the lengths of the paths
 
             returns:
@@ -615,6 +617,8 @@ def train_PG(
         re_n = [path["reward"] for path in paths]
 
         q_n, adv_n = agent.estimate_return(ob_no, re_n)
+
+        # not needed in pt
         agent.update_parameters(ob_no, ac_na, q_n, adv_n)
 
         # Log diagnostics

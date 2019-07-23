@@ -1,3 +1,4 @@
+import numpy as np
 import torch.nn as nn
 from torch.nn import init
 
@@ -11,3 +12,8 @@ def init_weights(module):
         elif isinstance(m, nn.Sequential):
             for sub_mod in m:
                 init_weights(sub_mod)
+
+
+def normalize(x, mu=0.0, std=1.0):
+    x = (x - np.mean(x)) / (np.std(x) + 1e-8)
+    return (x + mu) * (std + 1e-8)

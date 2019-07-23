@@ -6,7 +6,6 @@ Adapted for CS294-112 Fall 2018 by Michael Chang and Soroush Nasiriany
 import numpy as np
 import tensorflow as tf
 import torch.nn as nn
-import torch.functional as F
 import torch
 import gym
 import logz
@@ -14,11 +13,8 @@ import os
 import time
 import inspect
 from multiprocessing import Process
-from utils import *
+from utils import normalize, init_weights
 
-#============================================================================================#
-# Utilities
-#============================================================================================#
 
 #========================================================================================#
 #                           ----------PROBLEM 2----------
@@ -26,17 +22,16 @@ from utils import *
 
 
 class MLP(nn.Module):
-    def __init__(self, input_size, output_size, n_layers, size, is_discrete):
+    def __init__(self, output_size, n_layers, size, is_discrete):
         super(MLP, self).__init__()
-        self.input_size = input_size
+        self.size = size
         self.output_size = output_size
         self.n_layers = n_layers
-        self.size = size
         self.is_discrete = is_discrete
 
         self.logstd = nn.Parameter(torch.Tensor(self.size, 1).normal_(0.0, 1.0))
 
-        self.fc_input = nn.Linear(self.input_size, self.size)
+        self.fc_input = nn.Linear(self.size, self.size)
         self.middle_layers = []
 
         for _ in range(n_layers):
@@ -45,37 +40,19 @@ class MLP(nn.Module):
 
         self.out_layer = nn.Linear(self.size, self.output_size)
 
+        self.sm = nn.Softmax()
+
     def forward(self, x):
-        x = F.tanh(self.fc_input(x))
+        x = nn.functional.tanh(self.fc_input(x))
         for layer in self.m_layers:
-            x = F.tanh(layer(x))
+            x = nn.functional.tanh(layer(x))
 
         x = self.out_layer(x)
         if self.discrete:
-            x = F.softmax(x)
+            x = self.sm(x)
             return x
         else:
             return x, self.logstd
-
-
-def build_mlp(input_placeholder, output_size, scope, n_layers, size, activation=tf.tanh, output_activation=None):
-    """
-        Builds a feedforward neural network
-
-        arguments:
-            input_placeholder: placeholder variable for the state (batch_size, input_size)
-            output_size: size of the output layer
-            scope: variable scope of the network
-            n_layers: number of hidden layers
-            size: dimension of the hidden layer
-            activation: activation of the hidden layers
-            output_activation: activation of the ouput layers
-
-        returns:
-            output placeholder of the network (the result of a forward pass)
-    """
-
-    return model
 
 
 def pathlength(path):
@@ -89,6 +66,7 @@ def setup_logger(logdir, locals_):
     args = inspect.getargspec(train_PG)[0]
     params = {k: locals_[k] if k in locals_ else None for k in args}
     logz.save_params(params)
+
 
 #============================================================================================#
 # Policy Gradient
@@ -113,43 +91,24 @@ class Agent(object):
         self.reward_to_go = estimate_return_args['reward_to_go']
         self.nn_baseline = estimate_return_args['nn_baseline']
         self.normalize_advantages = estimate_return_args['normalize_advantages']
-        self.model = MLP(self.ob_dim, self.ac_dim, self.n_layers, self.size, self.discrete)
-        model.apply(init_weights)
+
+        # Model def.
+        self.model = MLP(self.ac_dim, self.n_layers, self.size, self.discrete)
+        self.model.apply(init_weights)
 
         self.lr = 1e-3
         self.beta1 = 0.9
         self.beta2 = 0.999
+
+        if self.nn_baseline:
+            self.baseline_prediction = MLP(1, self.n_layers, self.n_layers, self.is_discrete)
+            # YOUR_CODE_HERE TODO
+            self.sy_target_n = None
+            baseline_loss = None
+            # FIX this
+            self.base_opt = torch.optim.Adam(self.baseline_prediction.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
+
         self.opt = torch.optim.Adam(self.model.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
-
-    def init_tf_sess(self):
-        tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
-        self.sess = tf.Session(config=tf_config)
-        self.sess.__enter__()  # equivalent to `with self.sess:`
-        tf.global_variables_initializer().run()  # pylint: disable=E1101
-
-    #========================================================================================#
-    #                           ----------PROBLEM 2----------
-    #========================================================================================#
-    def define_placeholders(self):
-        """
-            Placeholders for batch batch observations / actions / advantages in policy gradient 
-            loss function.
-            See Agent.build_computation_graph for notation
-
-            returns:
-                sy_ob_no: placeholder for observations
-                sy_ac_na: placeholder for actions
-                sy_adv_n: placeholder for advantages
-        """
-        raise NotImplementedError
-        sy_ob_no = tf.placeholder(shape=[None, self.ob_dim], name="ob", dtype=tf.float32)
-        if self.discrete:
-            sy_ac_na = tf.placeholder(shape=[None], name="ac", dtype=tf.int32)
-        else:
-            sy_ac_na = tf.placeholder(shape=[None, self.ac_dim], name="ac", dtype=tf.float32)
-        # YOUR CODE HERE
-        sy_adv_n = None
-        return sy_ob_no, sy_ac_na, sy_adv_n
 
     #========================================================================================#
     #                           ----------PROBLEM 2----------
@@ -179,13 +138,10 @@ class Agent(object):
                 Pass in self.n_layers for the 'n_layers' argument, and
                 pass in self.size for the 'size' argument.
         """
-        raise NotImplementedError
         if self.discrete:
-            # YOUR_CODE_HERE
             sy_logits_na = self.model(sy_ob_no)
             return sy_logits_na
         else:
-            # YOUR_CODE_HERE
             sy_mean, sy_logstd = self.model(sy_ob_no)
             return (sy_mean, sy_logstd)
 
@@ -216,7 +172,6 @@ class Agent(object):
 
                  This reduces the problem to just sampling z. (Hint: use tf.random_normal!)
         """
-        raise NotImplementedError
         if self.discrete:
             sy_logits_na = policy_parameters
             dist = torch.categorical.Categorical(logits=sy_logits_na)
@@ -255,82 +210,16 @@ class Agent(object):
                 For the discrete case, use the log probability under a categorical distribution.
                 For the continuous case, use the log probability under a multivariate gaussian.
         """
-        raise NotImplementedError
         if self.discrete:
             sy_logits_na = policy_parameters
-            dist = torch.categorical.Categorical(logits=sy_logits_na)
-            sy_logprob_n = dist.logprob(sy_ac_na)
+            dist = torch.distributions.categorical.Categorical(logits=sy_logits_na)
+            sy_logprob_n = dist.log_prob(sy_ac_na)
         else:
             sy_mean, sy_logstd = policy_parameters
             # Reparam
             dist = torch.distributions.Normal(sy_mean, sy_logstd)
-            sy_logprob_n = dist.logprob(sy_ac_na)
+            sy_logprob_n = dist.log_prob(sy_ac_na)
         return sy_logprob_n
-
-    def policy_loss(sy_logprob_n, reward):
-        reward = torch.tensor(reward).type(torch.FloatTensor)
-        return torch.mean(sy_logprob_n * reward)
-
-    def build_computation_graph(self):
-        """
-            Notes on notation:
-
-            Symbolic variables have the prefix sy_, to distinguish them from the numerical values
-            that are computed later in the function
-
-            Prefixes and suffixes:
-            ob - observation 
-            ac - action
-            _no - this tensor should have shape (batch self.size /n/, observation dim)
-            _na - this tensor should have shape (batch self.size /n/, action dim)
-            _n  - this tensor should have shape (batch self.size /n/)
-
-            Note: batch self.size /n/ is defined at runtime, and until then, the shape for that axis
-            is None
-
-            ----------------------------------------------------------------------------------
-            loss: a function of self.sy_logprob_n and self.sy_adv_n that we will differentiate
-                to get the policy gradient.
-        """
-        self.sy_ob_no, self.sy_ac_na, self.sy_adv_n = self.define_placeholders()
-
-        # The policy takes in an observation and produces a distribution over the action space
-        self.policy_parameters = self.policy_forward_pass(self.sy_ob_no)
-
-        # We can sample actions from this action distribution.
-        # This will be called in Agent.sample_trajectory() where we generate a rollout.
-        self.sy_sampled_ac = self.sample_action(self.policy_parameters)
-
-        # We can also compute the logprob of the actions that were actually taken by the policy
-        # This is used in the loss function.
-        self.sy_logprob_n = self.get_log_prob(self.policy_parameters, self.sy_ac_na)
-
-        #========================================================================================#
-        #                           ----------PROBLEM 2----------
-        # Loss Function and Training Operation
-        #========================================================================================#
-        loss = None  # YOUR CODE HERE
-        self.update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(loss)
-
-        #========================================================================================#
-        #                           ----------PROBLEM 6----------
-        # Optional Baseline
-        #
-        # Define placeholders for targets, a loss function and an update op for fitting a
-        # neural network baseline. These will be used to fit the neural network baseline.
-        #========================================================================================#
-        if self.nn_baseline:
-            raise NotImplementedError
-            self.baseline_prediction = tf.squeeze(build_mlp(
-                self.sy_ob_no,
-                1,
-                "nn_baseline",
-                n_layers=self.n_layers,
-                size=self.size))
-            # YOUR_CODE_HERE
-            self.sy_target_n = None
-            baseline_loss = None
-            self.baseline_update_op = tf.train.AdamOptimizer(self.learning_rate).minimize(baseline_loss)
 
     def sample_trajectories(self, itr, env):
         # Collect paths until we have enough timesteps
@@ -377,44 +266,44 @@ class Agent(object):
     #====================================================================================#
     def sum_of_rewards(self, re_n):
         """
-            Monte Carlo estimation of the Q function.
+            Mont     e Carlo estimation of the Q function.
 
-            let sum_of_path_lengths be the sum of the lengths of the paths sampled from 
+            let sum_of_path_lengths be the sum of the lengths of the paths sampled from
                 Agent.sample_trajectories
             let num_paths be the number of paths sampled from Agent.sample_trajectories
 
             arguments:
-                re_n: length: num_paths. Each element in re_n is a numpy array 
+                re_n: length: num_paths. Each element in re_n is a numpy array
                     containing the rewards for the particular path
 
             returns:
-                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values 
+                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values
                     whose length is the sum of the lengths of the paths
 
             ----------------------------------------------------------------------------------
 
             Your code should construct numpy arrays for Q-values which will be used to compute
-            advantages (which will in turn be fed to the placeholder you defined in 
-            Agent.define_placeholders). 
+            advantages (which will in turn be fed to the placeholder you defined in
+            Agent.define_placeholders).
 
             Recall that the expression for the policy gradient PG is
 
                   PG = E_{tau} [sum_{t=0}^T grad log pi(a_t|s_t) * (Q_t - b_t )]
 
-            where 
+            where
 
                   tau=(s_0, a_0, ...) is a trajectory,
                   Q_t is the Q-value at time t, Q^{pi}(s_t, a_t),
-                  and b_t is a baseline which may depend on s_t. 
+                  and b_t is a baseline which may depend on s_t.
 
             You will write code for two cases, controlled by the flag 'reward_to_go':
 
-              Case 1: trajectory-based PG 
+              Case 1: trajectory-based PG
 
                   (reward_to_go = False)
 
-                  Instead of Q^{pi}(s_t, a_t), we use the total discounted reward summed over 
-                  entire trajectory (regardless of which time step the Q-value should be for). 
+                  Instead of Q^{pi}(s_t, a_t), we use the total discounted reward summed over
+                  entire trajectory (regardless of which time step the Q-value should be for).
 
                   For this case, the policy gradient estimator is
 
@@ -428,7 +317,7 @@ class Agent(object):
 
                       Q_t = Ret(tau)
 
-              Case 2: reward-to-go PG 
+              Case 2: reward-to-go PG
 
                   (reward_to_go = True)
 
@@ -439,30 +328,48 @@ class Agent(object):
 
 
             Store the Q-values for all timesteps and all trajectories in a variable 'q_n',
-            like the 'ob_no' and 'ac_na' above. 
+            like the 'ob_no' and 'ac_na' above.
         """
         # YOUR_CODE_HERE
+        q_n = []
         if self.reward_to_go:
-            raise NotImplementedError
+            ret_tau = 0
+            for re in re_n:
+                for i in range(len(re)):
+                    Q_re = 0
+                    for j in range(i, len(re)):
+                        discount = self.gamma ** j
+                        ret_tau = discount * re_n[j]
+                        Q_re += ret_tau
+                    q_n.append(Q_re)
         else:
-            raise NotImplementedError
-        return q_n
+            ret_tau = 0
+            for re in re_n:
+                Q_re = 0
+                for i in range(len(re)):
+                    discount = self.gamma ** i
+                    ret_tau = discount * re_n[i]
+                    Q_re += ret_tau
+
+                q_n.extend([Q_re] * len(re))
+
+        return np.asarray(q_n)
 
     def compute_advantage(self, ob_no, q_n):
         """
             Computes advantages by (possibly) subtracting a baseline from the estimated Q values
 
-            let sum_of_path_lengths be the sum of the lengths of the paths sampled from 
+            let sum_of_path_lengths be the sum of the lengths of the paths sampled from
                 Agent.sample_trajectories
             let num_paths be the number of paths sampled from Agent.sample_trajectories
 
             arguments:
                 ob_no: shape: (sum_of_path_lengths, ob_dim)
-                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values 
+                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values
                     whose length is the sum of the lengths of the paths
 
             returns:
-                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated 
+                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated
                     advantages whose length is the sum of the lengths of the paths
         """
         #====================================================================================#
@@ -488,19 +395,19 @@ class Agent(object):
         """
             Estimates the returns over a set of trajectories.
 
-            let sum_of_path_lengths be the sum of the lengths of the paths sampled from 
+            let sum_of_path_lengths be the sum of the lengths of the paths sampled from
                 Agent.sample_trajectories
             let num_paths be the number of paths sampled from Agent.sample_trajectories
 
             arguments:
                 ob_no: shape: (sum_of_path_lengths, ob_dim)
-                re_n: length: num_paths. Each element in re_n is a numpy array 
+                re_n: length: num_paths. Each element in re_n is a numpy array
                     containing the rewards for the particular path
 
             returns:
-                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values 
+                q_n: shape: (sum_of_path_lengths). A single vector for the estimated q values
                     whose length is the sum of the lengths of the paths
-                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated 
+                adv_n: shape: (sum_of_path_lengths). A single vector for the estimated
                     advantages whose length is the sum of the lengths of the paths
         """
         q_n = self.sum_of_rewards(re_n)
@@ -512,12 +419,11 @@ class Agent(object):
         if self.normalize_advantages:
             # On the next line, implement a trick which is known empirically to reduce variance
             # in policy gradient methods: normalize adv_n to have mean zero and std=1.
-            raise NotImplementedError
-            adv_n = None  # YOUR_CODE_HERE
+            adv_n = normalize(adv_n)
         return q_n, adv_n
 
     def update_parameters(self, ob_no, ac_na, q_n, adv_n):
-        """ 
+        """
             Update the parameters of the policy and (possibly) the neural network baseline,
             which is trained to approximate the value function.
 
@@ -533,11 +439,33 @@ class Agent(object):
                 nothing
 
         """
+        # 1) numpy -> tensor
+        # 2) obs to model, get policy parameters
+        #   a model.forward, sample actions, get logprobs
+        # 3) get the loss, logprobs * advantages
+        # 4) zero_grad, loss.back(), opt.step
 
+        ob_no_pt = torch.from_numpy(ob_no).type(torch.FloatTensor)
+        ac_na_pt = torch.from_numpy(ac_na).type(torch.FloatTensor)
+        q_n_pt = torch.from_numpy(q_n).type(torch.FloatTensor)
+        adv_n_pt = torch.from_numpy(adv_n).type(torch.FloatTensor)
 
+        # # Policy forward
+        policy_parameters = self.policy_forward_pass(ob_no_pt)
+
+        # Get the log prob
+        log_prob = self.get_log_prob(policy_parameters, ac_na_pt)
+
+        model_loss = torch.mean(log_prob * adv_n_pt)
+
+        self.opt.zero_grad()
+        model_loss.backward()
+        self.opt.step()
 
         #====================================================================================#
         #                           ----------PROBLEM 6----------
+        #                           TODO
+        #
         # Optimizing Neural Network Baseline
         #====================================================================================#
         if self.nn_baseline:
@@ -550,6 +478,12 @@ class Agent(object):
             # Hint #bl2: Instead of trying to target raw Q-values directly, rescale the
             # targets to have mean zero and std=1. (Goes with Hint #bl1 in
             # Agent.compute_advantage.)
+
+            # predicts the q
+            # 1) cast
+            # 2) model forward,
+            # 3) loss.mse
+            # 4) blabla
 
             # YOUR_CODE_HERE
             raise NotImplementedError
@@ -565,9 +499,6 @@ class Agent(object):
         #
         # For debug purposes, you may wish to save the value of the loss function before
         # and after an update, and then log them below.
-
-        # YOUR_CODE_HERE
-        raise NotImplementedError
 
 
 def train_PG(
@@ -643,12 +574,6 @@ def train_PG(
 
     agent = Agent(computation_graph_args, sample_trajectory_args, estimate_return_args)
 
-    # build computation graph
-    agent.build_computation_graph()
-
-    # tensorflow: config, session, variable initialization
-    agent.init_tf_sess()
-
     #========================================================================================#
     # Training Loop
     #========================================================================================#
@@ -666,6 +591,8 @@ def train_PG(
         re_n = [path["reward"] for path in paths]
 
         q_n, adv_n = agent.estimate_return(ob_no, re_n)
+
+        # PT loss.backward here
         agent.update_parameters(ob_no, ac_na, q_n, adv_n)
 
         # Log diagnostics
