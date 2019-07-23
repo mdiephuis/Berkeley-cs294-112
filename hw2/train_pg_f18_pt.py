@@ -22,23 +22,24 @@ from utils import normalize, init_weights
 
 
 class MLP(nn.Module):
-    def __init__(self, output_size, n_layers, size, is_discrete):
+    def __init__(self, input_size, output_size, n_layers, hidden_size, is_discrete):
         super(MLP, self).__init__()
-        self.size = size
+        self.input_size = input_size
+        self.hidden_size = hidden_size
         self.output_size = output_size
         self.n_layers = n_layers
         self.is_discrete = is_discrete
 
-        self.logstd = nn.Parameter(torch.Tensor(self.size, 1).normal_(0.0, 1.0))
+        self.logstd = nn.Parameter(torch.Tensor(self.output_size, 1).normal_(0.0, 1.0))
 
-        self.fc_input = nn.Linear(self.size, self.size)
+        self.fc_input = nn.Linear(self.input_size, self.hidden_size)
         self.middle_layers = []
 
         for _ in range(n_layers):
-            self.middle_layers.append(nn.Linear(self.size, self.size))
+            self.middle_layers.append(nn.Linear(self.hidden_size, self.hidden_size))
         self.m_layers = nn.ModuleList(self.middle_layers)
 
-        self.out_layer = nn.Linear(self.size, self.output_size)
+        self.out_layer = nn.Linear(self.hidden_size, self.output_size)
 
         self.sm = nn.Softmax()
 
@@ -48,7 +49,7 @@ class MLP(nn.Module):
             x = nn.functional.tanh(layer(x))
 
         x = self.out_layer(x)
-        if self.discrete:
+        if self.is_discrete:
             x = self.sm(x)
             return x
         else:
@@ -93,7 +94,7 @@ class Agent(object):
         self.normalize_advantages = estimate_return_args['normalize_advantages']
 
         # Model def.
-        self.model = MLP(self.ac_dim, self.n_layers, self.size, self.discrete)
+        self.model = MLP(self.ob_dim, self.ac_dim, self.n_layers, self.size, self.discrete)
         self.model.apply(init_weights)
 
         self.lr = 1e-3
@@ -173,11 +174,12 @@ class Agent(object):
                  This reduces the problem to just sampling z. (Hint: use tf.random_normal!)
         """
         if self.discrete:
-            sy_logits_na = policy_parameters
-            dist = torch.categorical.Categorical(logits=sy_logits_na)
+            sy_logits_na = torch.from_numpy(policy_parameters)
+            dist = torch.distributions.categorical.Categorical(logits=sy_logits_na)
             sy_sampled_ac = dist.sample(sy_logits_na.size(0))
         else:
-            sy_mean, sy_logstd = policy_parameters
+            sy_mean = torch.from_numpy(policy_parameters[0])
+            sy_logstd = torch.from_numpy(policy_parameters[1])
             # Reparam
             dist = torch.distributions.Normal(sy_mean, sy_logstd)
             sy_sampled_ac = dist.sample(sy_mean.size(0))
@@ -246,7 +248,7 @@ class Agent(object):
             #====================================================================================#
             #                           ----------PROBLEM 3----------
             #====================================================================================#
-            policy_parameters = self.model(ob)
+            policy_parameters = self.model(torch.from_numpy(ob).type(torch.FloatTensor))
             ac = self.sample_action(policy_parameters)
             ac = ac.detach().numpy()
             acs.append(ac)
