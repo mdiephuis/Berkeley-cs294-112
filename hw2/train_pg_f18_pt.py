@@ -44,9 +44,9 @@ class MLP(nn.Module):
         self.sm = nn.Softmax()
 
     def forward(self, x):
-        x = nn.functional.tanh(self.fc_input(x))
+        x = torch.tanh(self.fc_input(x))
         for layer in self.m_layers:
-            x = nn.functional.tanh(layer(x))
+            x = torch.tanh(layer(x))
 
         x = self.out_layer(x)
         if self.is_discrete:
@@ -93,23 +93,19 @@ class Agent(object):
         self.nn_baseline = estimate_return_args['nn_baseline']
         self.normalize_advantages = estimate_return_args['normalize_advantages']
 
-        # Model def.
-        self.model = MLP(self.ob_dim, self.ac_dim, self.n_layers, self.size, self.discrete)
-        self.model.apply(init_weights)
-
         self.lr = 1e-3
         self.beta1 = 0.9
         self.beta2 = 0.999
 
-        if self.nn_baseline:
-            self.baseline_prediction = MLP(1, self.n_layers, self.n_layers, self.is_discrete)
-            # YOUR_CODE_HERE TODO
-            self.sy_target_n = None
-            baseline_loss = None
-            # FIX this
-            self.base_opt = torch.optim.Adam(self.baseline_prediction.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
-
+        # Model def.
+        self.model = MLP(self.ob_dim, self.ac_dim, self.n_layers, self.size, self.discrete)
+        self.model.apply(init_weights)
         self.opt = torch.optim.Adam(self.model.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
+
+        if self.nn_baseline:
+            self.baseline_model = MLP(self.ob_dim, 1, self.n_layers, self.size, self.discrete)
+            self.baseline_model.apply(init_weights)
+            self.base_opt = torch.optim.Adam(self.baseline_model.parameters(), lr=self.lr, betas=(self.beta1, self.beta2))
 
     #========================================================================================#
     #                           ----------PROBLEM 2----------
@@ -173,17 +169,14 @@ class Agent(object):
 
                  This reduces the problem to just sampling z. (Hint: use tf.random_normal!)
         """
-        if self.discrete:
-            sy_logits_na = torch.from_numpy(policy_parameters)
-            dist = torch.distributions.categorical.Categorical(logits=sy_logits_na)
-            sy_sampled_ac = dist.sample(sy_logits_na.size(0))
-        else:
-            sy_mean = torch.from_numpy(policy_parameters[0])
-            sy_logstd = torch.from_numpy(policy_parameters[1])
-            # Reparam
-            dist = torch.distributions.Normal(sy_mean, sy_logstd)
-            sy_sampled_ac = dist.sample(sy_mean.size(0))
 
+        if self.discrete:
+            sy_logits_na = policy_parameters
+            sy_sampled_ac = torch.multinomial(sy_logits_na, num_samples=1).view(-1)
+        else:
+            sy_mean, sy_logstd = policy_parameters
+            # Reparam
+            sy_sampled_ac = torch.normal(mean=sy_mean, std=sy_logstd.exp())
         return sy_sampled_ac
 
     #========================================================================================#
@@ -250,7 +243,7 @@ class Agent(object):
             #====================================================================================#
             policy_parameters = self.model(torch.from_numpy(ob).type(torch.FloatTensor))
             ac = self.sample_action(policy_parameters)
-            ac = ac.detach().numpy()
+            ac = ac.detach().numpy()[0]
             acs.append(ac)
 
             ob, rew, done, _ = env.step(ac)
@@ -341,7 +334,7 @@ class Agent(object):
                     Q_re = 0
                     for j in range(i, len(re)):
                         discount = self.gamma ** j
-                        ret_tau = discount * re_n[j]
+                        ret_tau = discount * re[j]
                         Q_re += ret_tau
                     q_n.append(Q_re)
         else:
@@ -350,7 +343,7 @@ class Agent(object):
                 Q_re = 0
                 for i in range(len(re)):
                     discount = self.gamma ** i
-                    ret_tau = discount * re_n[i]
+                    ret_tau = discount * re[i]
                     Q_re += ret_tau
 
                 q_n.extend([Q_re] * len(re))
@@ -386,8 +379,11 @@ class Agent(object):
             # Hint #bl1: rescale the output from the nn_baseline to match the statistics
             # (mean and std) of the current batch of Q-values. (Goes with Hint
             # #bl2 in Agent.update_parameters.
-            raise NotImplementedError
-            b_n = None  # YOUR CODE HERE
+            mu_ob, std_ob = np.mean(ob_no), np.std(ob_no)
+            ob_no_pt = torch.from_numpy(ob_no).type(torch.FloatTensor)
+            b_n = self.baseline_model(ob_no_pt)
+            b_n = b_n.detach().numpy()
+            b_n = normalize(b_n, mu_ob, std_ob)
             adv_n = q_n - b_n
         else:
             adv_n = q_n.copy()
@@ -449,7 +445,6 @@ class Agent(object):
 
         ob_no_pt = torch.from_numpy(ob_no).type(torch.FloatTensor)
         ac_na_pt = torch.from_numpy(ac_na).type(torch.FloatTensor)
-        q_n_pt = torch.from_numpy(q_n).type(torch.FloatTensor)
         adv_n_pt = torch.from_numpy(adv_n).type(torch.FloatTensor)
 
         # # Policy forward
@@ -481,15 +476,16 @@ class Agent(object):
             # targets to have mean zero and std=1. (Goes with Hint #bl1 in
             # Agent.compute_advantage.)
 
-            # predicts the q
-            # 1) cast
-            # 2) model forward,
-            # 3) loss.mse
-            # 4) blabla
+            q_n_pt = torch.from_numpy(normalize(q_n)).type(torch.FloatTensor)
 
-            # YOUR_CODE_HERE
-            raise NotImplementedError
-            target_n = None
+            q_n_output = self.baseline_model(ob_no_pt)
+
+            loss_fn = torch.nn.MSELoss()
+            base_line_loss = loss_fn(q_n_output.view(-1), q_n_pt)
+
+            self.base_opt.zero_grad()
+            base_line_loss.backward()
+            self.base_opt.step()
 
         #====================================================================================#
         #                           ----------PROBLEM 3----------
