@@ -453,7 +453,7 @@ class Agent(object):
         # Get the log prob
         log_prob = self.get_log_prob(policy_parameters, ac_na_pt)
 
-        model_loss = torch.mean(log_prob * adv_n_pt)
+        model_loss = - torch.mean(log_prob * adv_n_pt)
 
         self.opt.zero_grad()
         model_loss.backward()
