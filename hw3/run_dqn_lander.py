@@ -10,6 +10,7 @@ import tensorflow.contrib.layers as layers
 import dqn
 from dqn_utils import *
 
+
 def lander_model(obs, num_actions, scope, reuse=False):
     with tf.variable_scope(scope, reuse=reuse):
         out = obs
@@ -20,12 +21,14 @@ def lander_model(obs, num_actions, scope, reuse=False):
 
         return out
 
+
 def lander_optimizer():
     return dqn.OptimizerSpec(
         constructor=tf.train.AdamOptimizer,
         lr_schedule=ConstantSchedule(1e-3),
         kwargs={}
     )
+
 
 def lander_stopping_criterion(num_timesteps):
     def stopping_criterion(env, t):
@@ -34,6 +37,7 @@ def lander_stopping_criterion(num_timesteps):
         return get_wrapper_by_name(env, "Monitor").get_total_steps() >= num_timesteps
     return stopping_criterion
 
+
 def lander_exploration_schedule(num_timesteps):
     return PiecewiseSchedule(
         [
@@ -41,6 +45,7 @@ def lander_exploration_schedule(num_timesteps):
             (num_timesteps * 0.1, 0.02),
         ], outside_value=0.02
     )
+
 
 def lander_kwargs():
     return {
@@ -56,6 +61,7 @@ def lander_kwargs():
         'grad_norm_clipping': 10,
         'lander': True
     }
+
 
 def lander_learn(env,
                  session,
@@ -76,10 +82,12 @@ def lander_learn(env,
     )
     env.close()
 
+
 def set_global_seeds(i):
     tf.set_random_seed(i)
     np.random.seed(i)
     random.seed(i)
+
 
 def get_session():
     tf.reset_default_graph()
@@ -92,6 +100,7 @@ def get_session():
     session = tf.Session(config=tf_config)
     return session
 
+
 def get_env(seed):
     env = gym.make('LunarLander-v2')
 
@@ -103,14 +112,16 @@ def get_env(seed):
 
     return env
 
+
 def main():
     # Run training
-    seed = 4565 # you may want to randomize this
+    seed = 4565  # you may want to randomize this
     print('random seed = %d' % seed)
     env = get_env(seed)
     session = get_session()
     set_global_seeds(seed)
     lander_learn(env, session, num_timesteps=500000, seed=seed)
+
 
 if __name__ == "__main__":
     main()
