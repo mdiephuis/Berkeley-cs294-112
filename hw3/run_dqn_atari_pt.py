@@ -82,6 +82,8 @@ def atari_learn(env,
     ],
         outside_value=5e-5 * lr_multiplier)
 
+
+
     atari_model = AtariModel()
 
     optimizer = dqn_pt.OptimizerSpec(
