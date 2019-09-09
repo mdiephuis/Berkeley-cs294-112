@@ -81,6 +81,7 @@ def atari_learn(env, num_timesteps):
         ], outside_value=0.01
     )
 
+
     dqn_pt.QLearner.learn(
         env=env,
         q_func=AtariModel,
