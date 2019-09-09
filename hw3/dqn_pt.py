@@ -98,6 +98,8 @@ class QLearner(object):
         self.env = env
         self.exploration = exploration
         self.rew_file = str(uuid.uuid4()) + '.pkl' if rew_file is None else rew_file
+        self.gamma = gamma
+
 
         ###############
         # BUILD MODEL #
@@ -168,12 +170,12 @@ class QLearner(object):
         ######
 
         # construct optimization op (with gradient clipping)
-        self.optimizer = self.optimizer_spec.constructor(self.q.parameters(), lr=0.01, **self.optimizer_spec.kwargs)
-        self.train_fn = minimize_and_clip(optimizer, clip_val=grad_norm_clipping)
+        self.optimizer = self.optimizer_spec.constructor(self.q.parameters(), lr=0.01)
+        self.train_fn = minimize_and_clip(self.q.parameters(), clip_val=grad_norm_clipping)
 
         # update_target_fn will be called periodically to copy Q network to target Q network
 
-        self.update_target_fn = update_target_fn(q, target_q)
+        self.update_target_fn = update_target_fn(self.q, self.target_q)
 
         # construct the replay buffer
         self.replay_buffer = ReplayBuffer(replay_buffer_size, frame_history_len, lander=lander)
@@ -192,7 +194,7 @@ class QLearner(object):
         self.start_time = None
         self.t = 0
 
-    def bellman_error(q, q_target, curr_state, next_state, action_ind, reward, gamma):
+    def bellman_error(self, q, q_target, curr_state, next_state, action_ind, reward, gamma):
 
         curr_state = torch.from_numpy(curr_state)
         next_state = torch.from_numpy(next_state)
@@ -253,7 +255,7 @@ class QLearner(object):
         action = torch.max(self.q(torch.from_numpy(last_obs_encoded)))
 
         # Step environment
-        obs, reward, done, info = env.step(action)
+        obs, reward, done, info = self.env.step(action)
 
         # use frame index to store effect
         self.replay_buffer.store_effect(frame_ind, action, reward, done)
@@ -322,11 +324,11 @@ class QLearner(object):
 
             # def bellman_error(q, q_target, curr_state, next_state, action_ind, reward, gamma):
             bellman_loss = 0
-            for curr_state, next_state, action_id, reward in zip(obs_batch, next_obs_batch, act_batch, reward_batch):
-                bellman_loss += bellman_error(q, q_target, curr_state, next_state, action_ind, reward, gamma)
+            for curr_state, next_state, action_ind, reward in zip(obs_batch, next_obs_batch, act_batch, reward_batch):
+                bellman_loss += bellman_error(self.q, self.q_target, curr_state, next_state, action_ind, reward, self.gamma)
             bellman_loss /= curr_state.shape[0]
 
-            self.total_error = b_error
+            self.total_error = bellman_loss
             self.optimizer.zero_grad()
             bellman_loss.backward()
             self.optimizer.step()
@@ -339,7 +341,7 @@ class QLearner(object):
             if self.num_param_updates % 5 == 0:
                 self.num_param_updates = 0
                 # copy parameters from q network to q_target network
-                update_target_fn(q, q_target)
+                update_target_fn(self.q, self.q_target)
 
         self.t += 1
 
