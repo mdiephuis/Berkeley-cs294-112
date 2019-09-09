@@ -8,6 +8,7 @@ from collections import namedtuple
 import torch
 
 from dqn_utils_pt import *
+import random
 
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
@@ -189,6 +190,7 @@ class QLearner(object):
         self.mean_episode_reward = -float('nan')
         self.best_mean_episode_reward = -float('inf')
         self.last_obs = self.env.reset()
+        print(self.last_obs.shape)
         self.log_every_n_steps = 10000
 
         self.start_time = None
@@ -200,6 +202,7 @@ class QLearner(object):
         next_state = torch.from_numpy(next_state)
         action_ind = torch.from_numpy(action_ind)
         reward = torch.from_numpy(reward)
+        print(curr_state.size())
 
         max_q_target = gamma * torch.max(q_target(next_state))
         q_val = q(curr_state)[action_ind]
@@ -252,7 +255,10 @@ class QLearner(object):
         last_obs_encoded = self.replay_buffer.encode_recent_observation()
 
         # FIX ME with epsilon greedy exploitation
-        action = torch.max(self.q(torch.from_numpy(last_obs_encoded)))
+        if not self.model_initialized :
+            action = random.randint(0, self.num_actions - 1)
+        else:
+            action = torch.max(self.q(torch.from_numpy(last_obs_encoded)))
 
         # Step environment
         obs, reward, done, info = self.env.step(action)
@@ -261,8 +267,10 @@ class QLearner(object):
         self.replay_buffer.store_effect(frame_ind, action, reward, done)
 
         # set current observation as last_obs, or reset if end of episode
-        if done is True:
-            self.last_obs = self.evn.reset()
+
+
+        if done:
+            self.last_obs = self.env.reset()
         else:
             self.last_obs = obs
 
@@ -325,7 +333,7 @@ class QLearner(object):
             # def bellman_error(q, q_target, curr_state, next_state, action_ind, reward, gamma):
             bellman_loss = 0
             for curr_state, next_state, action_ind, reward in zip(obs_batch, next_obs_batch, act_batch, reward_batch):
-                bellman_loss += bellman_error(self.q, self.q_target, curr_state, next_state, action_ind, reward, self.gamma)
+                bellman_loss += self.bellman_error(self.q, self.target_q, curr_state, next_state, action_ind, reward, self.gamma)
             bellman_loss /= curr_state.shape[0]
 
             self.total_error = bellman_loss

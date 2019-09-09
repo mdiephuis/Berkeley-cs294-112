@@ -41,6 +41,7 @@ class AtariModel(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, x):
+        x = x.permute(0, 3, 1, 2)
         x = self.c1(x)
         x = self.c2(x)
         x = self.c3(x)
@@ -96,7 +97,7 @@ def atari_learn(env, num_timesteps):
         frame_history_len=4,
         target_update_freq=10000,
         grad_norm_clipping=10,
-        double_q=True
+        double_q=False
     )
 
     env.close()
