@@ -14,6 +14,8 @@ import random
 #         tf.square(x) * 0.5,
 #         delta * (tf.abs(x) - 0.5 * delta)
 #     )
+
+
 def huber_loss(x, delta=1.0):
     # https://en.wikipedia.org/wiki/Huber_loss
     return torch.where(
@@ -21,6 +23,7 @@ def huber_loss(x, delta=1.0):
         torch.pow(x, 2) * 0.5,
         delta * (torch.abs(x) - 0.5 * delta)
     )
+
 
 def sample_n_unique(sampling_f, n):
     """Helper function. Given a function `sampling_f` that returns
@@ -33,10 +36,12 @@ def sample_n_unique(sampling_f, n):
             res.append(candidate)
     return res
 
+
 class Schedule(object):
     def value(self, t):
         """Value of the schedule at time t"""
         raise NotImplementedError()
+
 
 class ConstantSchedule(object):
     def __init__(self, value):
@@ -52,8 +57,10 @@ class ConstantSchedule(object):
         """See Schedule.value"""
         return self._v
 
+
 def linear_interpolation(l, r, alpha):
     return l + alpha * (r - l)
+
 
 class PiecewiseSchedule(object):
     def __init__(self, endpoints, interpolation=linear_interpolation, outside_value=None):
@@ -78,7 +85,7 @@ class PiecewiseSchedule(object):
         assert idxes == sorted(idxes)
         self._interpolation = interpolation
         self._outside_value = outside_value
-        self._endpoints      = endpoints
+        self._endpoints = endpoints
 
     def value(self, t):
         """See Schedule.value"""
@@ -90,6 +97,7 @@ class PiecewiseSchedule(object):
         # t does not belong to any of the pieces, so doom.
         assert self._outside_value is not None
         return self._outside_value
+
 
 class LinearSchedule(object):
     def __init__(self, schedule_timesteps, final_p, initial_p=1.0):
@@ -107,16 +115,26 @@ class LinearSchedule(object):
             final output value
         """
         self.schedule_timesteps = schedule_timesteps
-        self.final_p            = final_p
-        self.initial_p          = initial_p
+        self.final_p = final_p
+        self.initial_p = initial_p
 
     def value(self, t):
         """See Schedule.value"""
-        fraction  = min(float(t) / self.schedule_timesteps, 1.0)
+        fraction = min(float(t) / self.schedule_timesteps, 1.0)
         return self.initial_p + fraction * (self.final_p - self.initial_p)
 
 
 class EMA(nn.Module):
+    """
+    Example, How to use:
+    ema = EMA(0.99)
+    optimizer.step()
+    if args.use_ema:
+        for name, param in model.named_parameters():
+         if param.requires_grad:
+              param.data = ema(name, param.data)
+    """
+
     def __init__(self, mu):
         super(EMA, self).__init__()
         self.mu = mu
@@ -131,16 +149,6 @@ class EMA(nn.Module):
         self.shadow[name] = new_average.clone()
         return new_average
 
-    """
-    Example, How to use:
-    ema = EMA(0.99)
-    optimizer.step()
-    if args.use_ema:
-        for name, param in model.named_parameters():
-         if param.requires_grad:
-              param.data = ema(name, param.data)
-    
-    """
 
 # def compute_exponential_averages(variables, decay):
 #     """Given a list of tensorflow scalar variables
@@ -173,12 +181,15 @@ class EMA(nn.Module):
 #         if grad is not None:
 #             gradients[i] = (tf.clip_by_norm(grad, clip_val), var)
 #     return optimizer.apply_gradients(gradients)
+
+
 def minimize_and_clip(parameters, clip_val=10):
     """Minimized `objective` using `optimizer` w.r.t. variables in
     `var_list` while ensure the norm of the gradients for each
     variable is clipped to `clip_val`
     """
     return nn.utils.clip_grad_norm_(parameters, max_norm=clip_val)
+
 
 def initialize_interdependent_variables(session, vars_list, feed_dict):
     """Initialize a list of variables one at a time, which is useful if
@@ -191,7 +202,7 @@ def initialize_interdependent_variables(session, vars_list, feed_dict):
             try:
                 # If using an older version of TensorFlow, uncomment the line
                 # below and comment out the line after it.
-		#session.run(tf.initialize_variables([v]), feed_dict)
+                #session.run(tf.initialize_variables([v]), feed_dict)
                 session.run(tf.variables_initializer([v]), feed_dict)
             except tf.errors.FailedPreconditionError:
                 new_vars_left.append(v)
@@ -203,6 +214,7 @@ def initialize_interdependent_variables(session, vars_list, feed_dict):
         else:
             vars_left = new_vars_left
 
+
 def get_wrapper_by_name(env, classname):
     currentenv = env
     while True:
@@ -211,7 +223,8 @@ def get_wrapper_by_name(env, classname):
         elif isinstance(env, gym.Wrapper):
             currentenv = currentenv.env
         else:
-            raise ValueError("Couldn't find wrapper named %s"%classname)
+            raise ValueError("Couldn't find wrapper named %s" % classname)
+
 
 class ReplayBuffer(object):
     def __init__(self, size, frame_history_len, lander=False):
@@ -245,27 +258,26 @@ class ReplayBuffer(object):
         self.size = size
         self.frame_history_len = frame_history_len
 
-        self.next_idx      = 0
+        self.next_idx = 0
         self.num_in_buffer = 0
 
-        self.obs      = None
-        self.action   = None
-        self.reward   = None
-        self.done     = None
+        self.obs = None
+        self.action = None
+        self.reward = None
+        self.done = None
 
     def can_sample(self, batch_size):
         """Returns true if `batch_size` different transitions can be sampled from the buffer."""
         return batch_size + 1 <= self.num_in_buffer
 
     def _encode_sample(self, idxes):
-        obs_batch      = np.concatenate([self._encode_observation(idx)[None] for idx in idxes], 0)
-        act_batch      = self.action[idxes]
-        rew_batch      = self.reward[idxes]
+        obs_batch = np.concatenate([self._encode_observation(idx)[None] for idx in idxes], 0)
+        act_batch = self.action[idxes]
+        rew_batch = self.reward[idxes]
         next_obs_batch = np.concatenate([self._encode_observation(idx + 1)[None] for idx in idxes], 0)
-        done_mask      = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes], dtype=np.float32)
+        done_mask = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes], dtype=np.float32)
 
         return obs_batch, act_batch, rew_batch, next_obs_batch, done_mask
-
 
     def sample(self, batch_size):
         """Sample `batch_size` different transitions.
@@ -318,12 +330,12 @@ class ReplayBuffer(object):
         return self._encode_observation((self.next_idx - 1) % self.size)
 
     def _encode_observation(self, idx):
-        end_idx   = idx + 1 # make noninclusive
+        end_idx = idx + 1  # make noninclusive
         start_idx = end_idx - self.frame_history_len
         # this checks if we are using low-dimensional observations, such as RAM
         # state, in which case we just directly return the latest RAM.
         if len(self.obs.shape) == 2:
-            return self.obs[end_idx-1]
+            return self.obs[end_idx - 1]
         # if there weren't enough frames ever in the buffer for context
         if start_idx < 0 and self.num_in_buffer != self.size:
             start_idx = 0
@@ -359,10 +371,10 @@ class ReplayBuffer(object):
             Index at which the frame is stored. To be used for `store_effect` later.
         """
         if self.obs is None:
-            self.obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.lander else np.uint8)
-            self.action   = np.empty([self.size],                     dtype=np.int32)
-            self.reward   = np.empty([self.size],                     dtype=np.float32)
-            self.done     = np.empty([self.size],                     dtype=np.bool)
+            self.obs = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.lander else np.uint8)
+            self.action = np.empty([self.size], dtype=np.int32)
+            self.reward = np.empty([self.size], dtype=np.float32)
+            self.done = np.empty([self.size], dtype=np.bool)
         self.obs[self.next_idx] = frame
 
         ret = self.next_idx
@@ -390,5 +402,4 @@ class ReplayBuffer(object):
         """
         self.action[idx] = action
         self.reward[idx] = reward
-        self.done[idx]   = done
-
+        self.done[idx] = done
