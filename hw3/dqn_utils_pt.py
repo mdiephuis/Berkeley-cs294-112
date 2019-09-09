@@ -234,7 +234,7 @@ class ReplayBuffer(object):
     def __init__(self, size, frame_history_len, lander=False):
         """This is a memory efficient implementation of the replay buffer.
 
-        The sepecific memory optimizations use here are:
+        The specific memory optimizations use here are:
             - only store each frame once rather than k times
               even if every observation normally consists of k last frames
             - store frames as np.uint8 (actually it is most time-performance
@@ -242,7 +242,7 @@ class ReplayBuffer(object):
               time)
             - store frame_t and frame_(t+1) in the same buffer.
 
-        For the tipical use case in Atari Deep RL buffer with 1M frames the total
+        For the typical use case in Atari Deep RL buffer with 1M frames the total
         memory footprint of this buffer is 10^6 * 84 * 84 bytes ~= 7 gigabytes
 
         Warning! Assumes that returning frame of zeros at the beginning
@@ -348,14 +348,14 @@ class ReplayBuffer(object):
                 start_idx = idx + 1
         missing_context = self.frame_history_len - (end_idx - start_idx)
         # if zero padding is needed for missing context
-        # or we are on the boundry of the buffer
+        # or we are on the boundary of the buffer
         if start_idx < 0 or missing_context > 0:
             frames = [np.zeros_like(self.obs[0]) for _ in range(missing_context)]
             for idx in range(start_idx, end_idx):
                 frames.append(self.obs[idx % self.size])
             return np.concatenate(frames, 2)
         else:
-            # this optimization has potential to saves about 30% compute time \o/
+            # this optimization has potential to save about 30% compute time \o/
             img_h, img_w = self.obs.shape[1], self.obs.shape[2]
             return self.obs[start_idx:end_idx].transpose(1, 2, 0, 3).reshape(img_h, img_w, -1)
 
@@ -388,12 +388,12 @@ class ReplayBuffer(object):
         return ret
 
     def store_effect(self, idx, action, reward, done):
-        """Store effects of action taken after obeserving frame stored
+        """Store effects of action taken after observing frame stored
         at index idx. The reason `store_frame` and `store_effect` is broken
         up into two functions is so that once can call `encode_recent_observation`
         in between.
 
-        Paramters
+        Parameters
         ---------
         idx: int
             Index in buffer of recently observed frame (returned by `store_frame`).

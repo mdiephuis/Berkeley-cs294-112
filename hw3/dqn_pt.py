@@ -162,18 +162,23 @@ class QLearner(object):
         # Older versions of TensorFlow may require using "VARIABLES" instead of "GLOBAL_VARIABLES"
         # Tip: use huber_loss (from dqn_utils) instead of squared error when defining self.total_error
         ######
+
+        # FIX ME
         self.q = q_func(frame_history_len * img_c, self.num_actions)
         self.target_q = q_func(frame_history_len * img_c, self.num_actions)
+
+        # Bellman error
+
 
         ######
 
         # construct optimization op (with gradient clipping)
-        optimizer = self.optimizer_spec.constructor(self.q.parameters(), learning_rate=0.01, **self.optimizer_spec.kwargs)
+        self.optimizer = self.optimizer_spec.constructor(self.q.parameters(), learning_rate=0.01, **self.optimizer_spec.kwargs)
         self.train_fn = minimize_and_clip(optimizer, clip_val=grad_norm_clipping)
 
         # update_target_fn will be called periodically to copy Q network to target Q network
 
-        self.update_target_fn = update_target_fn(q,target_q)
+        self.update_target_fn = update_target_fn(q, target_q)
 
         # construct the replay buffer
         self.replay_buffer = ReplayBuffer(replay_buffer_size, frame_history_len, lander=lander)
@@ -191,6 +196,18 @@ class QLearner(object):
 
         self.start_time = None
         self.t = 0
+
+    def bellman_error(q, q_target, curr_state, next_state, action_ind, reward, gamma):
+
+        curr_state = torch.from_numpy(curr_state)
+        next_state = torch.from_numpy(next_state)
+        action_ind = torch.from_numpy(action_ind)
+        reward = torch.from_numpy(reward)
+
+        max_q_target = gamma * torch.max(q_target(next_state))
+        q_val = q(curr_state)[action_ind]
+
+        return huber_loss(q_val - (reward + max_q_target))
 
     def stopping_criterion_met(self):
         return self.stopping_criterion is not None and self.stopping_criterion(self.env, self.t)
@@ -221,6 +238,7 @@ class QLearner(object):
         # that you pushed into the buffer and compute the corresponding
         # input that should be given to a Q network by appending some
         # previous frames.
+        #
         # Don't forget to include epsilon greedy exploration!
         # And remember that the first time you enter this loop, the model
         # may not yet have been initialized (but of course, the first step
@@ -229,6 +247,25 @@ class QLearner(object):
         #####
 
         # YOUR CODE HERE
+
+        # Store last observation in replay_buffer, get frame index
+        frame_ind = self.replay_buffer.store_frame(self.last_obs)
+
+        # Get action, in the beginning this is random, because the Q-net isn't trained
+        last_obs_encoded = self.replay_buffer.encode_recent_observation()
+        action = torch.max(self.q(torch.from_numpy(last_obs_encoded)))
+
+        # Step environment
+        obs, reward, done, info = env.step(action)
+
+        # use frame index to store effect
+        self.replay_buffer.store_effect(frame_ind, action, reward, done)
+
+        # set current observation as last_obs, or reset if end of episode
+        if done is True:
+            self.last_obs = self.evn.reset()
+        else:
+            self.last_obs = obs
 
     def update_model(self):
         ### 3. Perform experience replay and train the network.
@@ -240,10 +277,12 @@ class QLearner(object):
                 self.replay_buffer.can_sample(self.batch_size)):
 
             # Here, you should perform training. Training consists of four steps:
+            #
             # 3.a: use the replay buffer to sample a batch of transitions (see the
             # replay buffer code for function definition, each batch that you sample
             # should consist of current observations, current actions, rewards,
             # next observations, and done indicator).
+            #
             # 3.b: initialize the model if it has not been initialized yet; to do
             # that, call
             #    initialize_interdependent_variables(self.session, tf.global_variables(), {
@@ -276,7 +315,34 @@ class QLearner(object):
 
             # YOUR CODE HERE
 
+            # 1 Sample a batch
+            obs_batch, act_batch, reward_batch, next_obs_batch, done_mask = self.replay_buffer.sample(self.batch_size)
+
+            # 2 init model
+            self.model_initialized = True
+
+            # 3 Bellman error over the batch. Set self.total_error
+
+            # def bellman_error(q, q_target, curr_state, next_state, action_ind, reward, gamma):
+            bellman_loss = 0
+            for curr_state, next_state, action_id, reward in zip(obs_batch, next_obs_batch, act_batch, reward_batch):
+                bellman_loss += bellman_error(q, q_target, curr_state, next_state, action_ind, reward, gamma)
+            bellman_loss /= curr_state.shape[0]
+
+            self.total_error = b_error
+            self.optimizer.zero_grad()
+            bellman_loss.backward()
+            self.optimizer.step()
+
+            # clip parameters
+            minimize_and_clip(self.q.parameters(), clip_value=10)
+
             self.num_param_updates += 1
+
+            if self.num_param_updates % 5 == 0:
+                self.num_param_updates = 0
+                # copy parameters from q network to q_target network
+                update_target_fn(q, q_target)
 
         self.t += 1
 
