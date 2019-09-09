@@ -9,7 +9,7 @@ import random
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
 from collections import namedtuple
-from dqn_utils import *
+from dqn_utils_pt import *
 
 import torch
 import torch.nn as nn
@@ -162,23 +162,18 @@ class QLearner(object):
         # Older versions of TensorFlow may require using "VARIABLES" instead of "GLOBAL_VARIABLES"
         # Tip: use huber_loss (from dqn_utils) instead of squared error when defining self.total_error
         ######
-
-        # YOUR CODE HERE
+        self.q = q_func(frame_history_len * img_c, self.num_actions)
+        self.target_q = q_func(frame_history_len * img_c, self.num_actions)
 
         ######
 
         # construct optimization op (with gradient clipping)
-        self.learning_rate = tf.placeholder(tf.float32, (), name="learning_rate")
-        optimizer = self.optimizer_spec.constructor(learning_rate=self.learning_rate, **self.optimizer_spec.kwargs)
-        self.train_fn = minimize_and_clip(optimizer, self.total_error,
-                                          var_list=q_func_vars, clip_val=grad_norm_clipping)
+        optimizer = self.optimizer_spec.constructor(self.q.parameters(), learning_rate=0.01, **self.optimizer_spec.kwargs)
+        self.train_fn = minimize_and_clip(optimizer, clip_val=grad_norm_clipping)
 
         # update_target_fn will be called periodically to copy Q network to target Q network
-        update_target_fn = []
-        for var, var_target in zip(sorted(q_func_vars, key=lambda v: v.name),
-                                   sorted(target_q_func_vars, key=lambda v: v.name)):
-            update_target_fn.append(var_target.assign(var))
-        self.update_target_fn = tf.group(*update_target_fn)
+
+        self.update_target_fn = update_target_fn(q,target_q)
 
         # construct the replay buffer
         self.replay_buffer = ReplayBuffer(replay_buffer_size, frame_history_len, lander=lander)
