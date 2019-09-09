@@ -180,6 +180,9 @@ def minimize_and_clip(parameters, clip_val=10):
     """
     return nn.utils.clip_grad_norm_(parameters, max_norm=clip_val)
 
+def update_target_fn(q,target_q):
+    return target_q.load_state_dict(q.state_dict())
+
 def initialize_interdependent_variables(session, vars_list, feed_dict):
     """Initialize a list of variables one at a time, which is useful if
     initialization of some variables depends on initialization of the others.
