@@ -1,4 +1,5 @@
 # Maurits
+*.ipynb
 *.org
 todo.txt
 test.py

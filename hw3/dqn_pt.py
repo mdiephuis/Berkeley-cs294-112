@@ -3,16 +3,12 @@ import time
 import pickle
 import sys
 import gym.spaces
-import itertools
 import numpy as np
-import random
-import tensorflow as tf
-import tensorflow.contrib.layers as layers
 from collections import namedtuple
+import torch
+
 from dqn_utils_pt import *
 
-import torch
-import torch.nn as nn
 
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
 
@@ -24,7 +20,6 @@ class QLearner(object):
         env,
         q_func,
         optimizer_spec,
-        session,
         exploration=LinearSchedule(1000000, 0.1),
         stopping_criterion=None,
         replay_buffer_size=1000000,
@@ -101,7 +96,6 @@ class QLearner(object):
         self.learning_starts = learning_starts
         self.stopping_criterion = stopping_criterion
         self.env = env
-        self.session = session
         self.exploration = exploration
         self.rew_file = str(uuid.uuid4()) + '.pkl' if rew_file is None else rew_file
 
@@ -136,13 +130,14 @@ class QLearner(object):
         # self.done_mask_ph = tf.placeholder(tf.float32, [None])
 
         # casting to float on GPU ensures lower data transfer times.
-        if lander:
-            obs_t_float = self.obs_t_ph
-            obs_tp1_float = self.obs_tp1_ph
-        else:
-            # Fix for GPU later
-            obs_t_float = self.obs_t_ph.type(torch.FloatTensor) / 255.0
-            obs_tp1_float = self.obs_tp1_ph.type(torch.FloatTensor) / 255.0
+
+        # if lander:
+        #     obs_t_float = self.obs_t_ph
+        #     obs_tp1_float = self.obs_tp1_ph
+        # else:
+        #     # Fix for GPU later
+        #     obs_t_float = self.obs_t_ph.type(torch.FloatTensor) / 255.0
+        #     obs_tp1_float = self.obs_tp1_ph.type(torch.FloatTensor) / 255.0
 
         # Here, you should fill in your own code to compute the Bellman error. This requires
         # evaluating the current and next Q-values and constructing the corresponding error.
@@ -173,7 +168,7 @@ class QLearner(object):
         ######
 
         # construct optimization op (with gradient clipping)
-        self.optimizer = self.optimizer_spec.constructor(self.q.parameters(), learning_rate=0.01, **self.optimizer_spec.kwargs)
+        self.optimizer = self.optimizer_spec.constructor(self.q.parameters(), lr=0.01, **self.optimizer_spec.kwargs)
         self.train_fn = minimize_and_clip(optimizer, clip_val=grad_norm_clipping)
 
         # update_target_fn will be called periodically to copy Q network to target Q network
@@ -253,6 +248,8 @@ class QLearner(object):
 
         # Get action, in the beginning this is random, because the Q-net isn't trained
         last_obs_encoded = self.replay_buffer.encode_recent_observation()
+
+        # FIX ME with epsilon greedy exploitation
         action = torch.max(self.q(torch.from_numpy(last_obs_encoded)))
 
         # Step environment
