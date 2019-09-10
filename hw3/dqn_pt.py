@@ -198,11 +198,10 @@ class QLearner(object):
 
     def bellman_error(self, q, q_target, curr_state, next_state, action_ind, reward, gamma):
 
-        curr_state = torch.from_numpy(curr_state)
-        next_state = torch.from_numpy(next_state)
-        action_ind = torch.from_numpy(action_ind)
-        reward = torch.from_numpy(reward)
-        print(curr_state.size())
+        curr_state = torch.from_numpy(curr_state).unsqueeze(0)
+        next_state = torch.from_numpy(next_state).unsqueeze(0)
+        #action_ind = torch.from_numpy(action_ind)
+        #reward = torch.from_numpy(reward)
 
         max_q_target = gamma * torch.max(q_target(next_state))
         q_val = q(curr_state)[action_ind]
@@ -252,13 +251,13 @@ class QLearner(object):
         frame_ind = self.replay_buffer.store_frame(self.last_obs)
 
         # Get action, in the beginning this is random, because the Q-net isn't trained
-        last_obs_encoded = self.replay_buffer.encode_recent_observation()
+        last_obs_encoded = torch.from_numpy(self.replay_buffer.encode_recent_observation()).unsqueeze(0)
 
         # FIX ME with epsilon greedy exploitation
         if not self.model_initialized :
             action = random.randint(0, self.num_actions - 1)
         else:
-            action = torch.max(self.q(torch.from_numpy(last_obs_encoded)))
+            action = torch.max(self.q(last_obs_encoded))
 
         # Step environment
         obs, reward, done, info = self.env.step(action)
