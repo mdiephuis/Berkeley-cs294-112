@@ -36,7 +36,7 @@ class AtariModel(nn.Module):
         self.c2 = Conv2DRelu(32, 64, 4, 2, 1)
         self.c3 = Conv2DRelu(64, 64, 3, 1, 1)
         self.bf = BatchFlatten()
-        self.fc1 = nn.Linear(64 * 10 * 10, 512)
+        self.fc1 = nn.Linear(31616, 512)
         self.fc2 = nn.Linear(512, num_actions)
         self.relu = nn.ReLU()
 

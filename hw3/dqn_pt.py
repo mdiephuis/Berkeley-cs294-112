@@ -111,6 +111,7 @@ class QLearner(object):
             input_shape = self.env.observation_space.shape
         else:
             img_h, img_w, img_c = self.env.observation_space.shape
+            img_h, img_w, img_c = 210, 160, 3
             input_shape = (img_h, img_w, frame_history_len * img_c)
         self.num_actions = self.env.action_space.n
 
@@ -172,7 +173,7 @@ class QLearner(object):
 
         # construct optimization op (with gradient clipping)
         self.optimizer = self.optimizer_spec.constructor(self.q.parameters(), lr=0.01)
-        self.train_fn = minimize_and_clip(self.q.parameters(), clip_val=grad_norm_clipping)
+        self.train_fn = minimize_and_clip(self.q.parameters(), clip_value=grad_norm_clipping)
 
         # update_target_fn will be called periodically to copy Q network to target Q network
 
@@ -203,8 +204,9 @@ class QLearner(object):
         #action_ind = torch.from_numpy(action_ind)
         #reward = torch.from_numpy(reward)
 
-        max_q_target = gamma * torch.max(q_target(next_state))
-        q_val = q(curr_state)[action_ind]
+        max_q_target = gamma * torch.max(q_target(next_state.float()))
+        # model forward
+        q_val = q(curr_state.float()).squeeze(0)[action_ind]
 
         return huber_loss(q_val - (reward + max_q_target))
 
@@ -254,10 +256,12 @@ class QLearner(object):
         last_obs_encoded = torch.from_numpy(self.replay_buffer.encode_recent_observation()).unsqueeze(0)
 
         # FIX ME with epsilon greedy exploitation
-        if not self.model_initialized :
+        if not self.model_initialized:
             action = random.randint(0, self.num_actions - 1)
         else:
-            action = torch.max(self.q(last_obs_encoded))
+            # model forward. [210 160 3]
+            action = torch.argmax(self.q(last_obs_encoded.float())).detach().numpy()
+            print('Action: {} '.format(action))
 
         # Step environment
         obs, reward, done, info = self.env.step(action)
@@ -348,7 +352,7 @@ class QLearner(object):
             if self.num_param_updates % 5 == 0:
                 self.num_param_updates = 0
                 # copy parameters from q network to q_target network
-                update_target_fn(self.q, self.q_target)
+                update_target_fn(self.q, self.target_q)
 
         self.t += 1
 

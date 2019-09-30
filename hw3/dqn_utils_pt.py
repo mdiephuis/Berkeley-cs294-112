@@ -183,12 +183,12 @@ class EMA(nn.Module):
 #     return optimizer.apply_gradients(gradients)
 
 
-def minimize_and_clip(parameters, clip_val=10):
+def minimize_and_clip(parameters, clip_value=10):
     """Minimized `objective` using `optimizer` w.r.t. variables in
     `var_list` while ensure the norm of the gradients for each
     variable is clipped to `clip_val`
     """
-    return nn.utils.clip_grad_norm_(parameters, max_norm=clip_val)
+    return nn.utils.clip_grad_norm_(parameters, max_norm=clip_value)
 
 
 def update_target_fn(q, target_q):

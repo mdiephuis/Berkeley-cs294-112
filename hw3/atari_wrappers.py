@@ -1,7 +1,8 @@
 #import sys
 #sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 
-import cv2
+# import cv2
+from skimage.transform import resize
 import numpy as np
 from collections import deque
 import gym
@@ -113,7 +114,8 @@ class MaxAndSkipEnv(gym.Wrapper):
 def _process_frame84(frame):
     img = np.reshape(frame, [210, 160, 3]).astype(np.float32)
     img = img[:, :, 0] * 0.299 + img[:, :, 1] * 0.587 + img[:, :, 2] * 0.114
-    resized_screen = cv2.resize(img, (84, 110), interpolation=cv2.INTER_LINEAR)
+    # resized_screen = cv2.resize(img, (84, 110), interpolation=cv2.INTER_LINEAR)
+    resized_screen = resize(img, (84, 110))
     x_t = resized_screen[18:102, :]
     x_t = np.reshape(x_t, [84, 84, 1])
     return x_t.astype(np.uint8)
